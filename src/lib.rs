@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap};
+use std::{any::Any, collections::HashMap, slice::Iter};
 
 pub struct Command {
     pub name: String,
@@ -7,7 +7,7 @@ pub struct Command {
     pub flags: Vec<Flag>,
     pub subcommands: Vec<Command>,
     pub states: StateBox,
-    pub func: fn(cmd: &mut Command, args: &[String]),
+    pub run_func: fn(states: &StateBox),
     pub man: String,
 }
 
@@ -21,7 +21,7 @@ impl PartialEq for Command {
             flags: _,
             subcommands: _,
             states: _,
-            func: _,
+            run_func: _,
             man: _,
         }: &Self,
     ) -> bool {
@@ -59,10 +59,10 @@ impl Command {
         help.push_str(&format!("{}\t{}", self.name, self.about));
         help
     }
-    pub fn run(&mut self, args: &[String]) {
-        let mut args_iter = args.iter();
+    pub fn run(&mut self, mut args: Iter<'_, String>) {
+        let mut first_arg = true;
         let mut opr = None;
-        'outer: while let Some(arg) = args_iter.nth(0) {
+        'outer: while let Some(arg) = args.nth(0) {
             if let Some(l_arg) = arg.strip_prefix("--") {
                 match l_arg {
                     "help" => {
@@ -72,18 +72,14 @@ impl Command {
                     _ => {
                         for flag in &self.flags {
                             if flag.long == l_arg {
-                                let val = if flag.consumer {
-                                    args_iter.nth(0)
-                                } else {
-                                    None
-                                };
+                                let val = if flag.consumer { args.nth(0) } else { None };
                                 if flag.breakpoint {
                                     if opr.is_some() {
                                         panic!("Multiple breakpoint arguments supplied!");
                                     }
                                     opr = Some((flag, val));
                                 } else {
-                                    (flag.func)(&mut self.states, val)
+                                    (flag.run_func)(&mut self.states, val)
                                 }
                                 continue 'outer;
                             }
@@ -103,18 +99,14 @@ impl Command {
                         c => {
                             for flag in &self.flags {
                                 if flag.short == c {
-                                    let val = if flag.consumer {
-                                        args_iter.nth(0)
-                                    } else {
-                                        None
-                                    };
+                                    let val = if flag.consumer { args.nth(0) } else { None };
                                     if flag.breakpoint {
                                         if opr.is_some() {
                                             panic!("Multiple breakpoint arguments supplied!");
                                         }
                                         opr = Some((flag, val));
                                     } else {
-                                        (flag.func)(&mut self.states, val)
+                                        (flag.run_func)(&mut self.states, val)
                                     }
                                     continue 'mid;
                                 }
@@ -125,12 +117,26 @@ impl Command {
                         }
                     }
                 }
+            } else if first_arg {
+                for command in &mut self.subcommands {
+                    if command.name == *arg {
+                        command.run(args);
+                        return;
+                    }
+                }
+                let error = format!("unknown comand \"{arg}\" for \"{}\"", self.name);
+                println!(
+                    "Error: {error}\nRun {} --help for usage.\n{error}",
+                    self.name
+                );
+                return;
             }
+            first_arg = false;
         }
         if let Some((opr, val)) = opr {
-            (opr.func)(&mut self.states, val)
+            (opr.run_func)(&mut self.states, val)
         } else {
-            (self.func)(self, args)
+            (self.run_func)(&self.states)
         }
     }
 }
@@ -141,7 +147,7 @@ pub struct Flag {
     pub about: String,
     pub consumer: bool,
     pub breakpoint: bool,
-    pub func: fn(parent: &mut StateBox, flag: Option<&String>),
+    pub run_func: fn(parent: &mut StateBox, flag: Option<&String>),
 }
 
 impl PartialEq for Flag {
@@ -153,7 +159,7 @@ impl PartialEq for Flag {
             about: _,
             consumer: _,
             breakpoint: _,
-            func: _,
+            run_func: _,
         }: &Self,
     ) -> bool {
         false
@@ -166,9 +172,6 @@ impl Flag {
         help.push_str(&format!("-{}, --{}\t{}", self.short, self.long, self.about));
         help
     }
-    // pub fn run(&self, states: &mut StateBox) {
-    //     (self.func)(states)
-    // }
 }
 
 pub struct StateBox {
