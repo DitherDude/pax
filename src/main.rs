@@ -29,6 +29,6 @@ fn main_work(_cmd: &mut Command, _args: &[String]) {
     println!("Hello, World!\n{}", _cmd.states.len());
 }
 
-fn help_work(_parent: &mut StateBox) {
+fn help_work(_parent: &mut StateBox, _flag: Option<&String>) {
     println!("Did nothing successfully.");
 }
