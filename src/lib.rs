@@ -66,11 +66,21 @@ impl Command {
             if let Some(l_arg) = arg.strip_prefix("--") {
                 for flag in &self.flags {
                     if flag.long == l_arg {
-                        opr = Some(flag);
+                        if flag.breakpoint {
+                            if opr.is_some() {
+                                panic!("Multiple breakpoint arguments supplied!");
+                            }
+                            opr = Some(flag);
+                        } else {
+                            (flag.func)(&mut self.states)
+                        }
                         break;
                     }
                 }
-            } else if let Some(mut s_arg) = arg.strip_prefix("-") {
+                let error = format!("unknown flag: '{l_arg}'");
+                println!("Error: {error}\n{}\n\n{error}", self.help());
+                return;
+            } else if let Some(s_arg) = arg.strip_prefix("-") {
                 'mid: for chr in s_arg.chars() {
                     match chr {
                         'h' => {
@@ -80,8 +90,16 @@ impl Command {
                         c => {
                             for flag in &self.flags {
                                 if flag.short == c {
-                                    opr = Some(flag);
-                                    s_arg = &s_arg[1..];
+                                    //
+                                    if flag.breakpoint {
+                                        if opr.is_some() {
+                                            panic!("Multiple breakpoint arguments supplied!");
+                                        }
+                                        opr = Some(flag);
+                                    } else {
+                                        (flag.func)(&mut self.states)
+                                    }
+                                    //
                                     continue 'mid;
                                 }
                             }
@@ -93,8 +111,8 @@ impl Command {
                 }
             }
         }
-        if let Some(flag) = opr {
-            (flag.func)(self)
+        if let Some(opr) = opr {
+            (opr.func)(&mut self.states)
         } else {
             (self.func)(self, args)
         }
@@ -106,7 +124,8 @@ pub struct Flag {
     pub long: String,
     pub about: String,
     pub consumer: bool,
-    pub func: fn(parent: &mut Command),
+    pub breakpoint: bool,
+    pub func: fn(parent: &mut StateBox),
 }
 
 impl PartialEq for Flag {
@@ -117,6 +136,7 @@ impl PartialEq for Flag {
             long: _,
             about: _,
             consumer: _,
+            breakpoint: _,
             func: _,
         }: &Self,
     ) -> bool {
@@ -130,9 +150,12 @@ impl Flag {
         help.push_str(&format!("-{}, --{}\t{}", self.short, self.long, self.about));
         help
     }
-    pub fn run(&self, parent: &mut Command) {
-        (self.func)(parent)
+    pub fn run(&self, states: &mut StateBox) {
+        (self.func)(states)
     }
+    // pub fn breakpoint(&self) -> bool {
+    //     self.breakpoint
+    // }
 }
 
 pub struct StateBox {

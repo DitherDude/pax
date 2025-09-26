@@ -9,6 +9,7 @@ fn main() {
         long: String::from("sample"),
         about: String::from("Does nothing"),
         consumer: false,
+        breakpoint: false,
         func: help_work,
     };
     let mut command = Command {
@@ -28,6 +29,6 @@ fn main_work(_cmd: &mut Command, _args: &[String]) {
     println!("Hello, World!\n{}", _cmd.states.len());
 }
 
-fn help_work(_parent: &mut Command) {
+fn help_work(_parent: &mut StateBox) {
     println!("Did nothing successfully.");
 }
