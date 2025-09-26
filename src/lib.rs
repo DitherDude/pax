@@ -40,7 +40,6 @@ impl Command {
             flags.push_str(&format!("  {}\n", flag.help()));
         }
         flags.push_str(&format!("  -h, --help\thelp for {}\n", self.name));
-        // }
         if self.subcommands != Vec::new() {
             attrs.push_str(&format!("  {} [command]\n", self.name));
             commands = String::from("\nAvailable Commands:\n");
@@ -62,24 +61,32 @@ impl Command {
     }
     pub fn run(&mut self, args: &[String]) {
         let mut opr = None;
-        for arg in args {
+        'outer: for arg in args {
             if let Some(l_arg) = arg.strip_prefix("--") {
-                for flag in &self.flags {
-                    if flag.long == l_arg {
-                        if flag.breakpoint {
-                            if opr.is_some() {
-                                panic!("Multiple breakpoint arguments supplied!");
+                match l_arg {
+                    "help" => {
+                        println!("{}", self.help());
+                        return;
+                    }
+                    _ => {
+                        for flag in &self.flags {
+                            if flag.long == l_arg {
+                                if flag.breakpoint {
+                                    if opr.is_some() {
+                                        panic!("Multiple breakpoint arguments supplied!");
+                                    }
+                                    opr = Some(flag);
+                                } else {
+                                    (flag.func)(&mut self.states)
+                                }
+                                continue 'outer;
                             }
-                            opr = Some(flag);
-                        } else {
-                            (flag.func)(&mut self.states)
                         }
-                        break;
+                        let error = format!("unknown flag: '{l_arg}'");
+                        println!("Error: {error}\n{}\n\n{error}", self.help());
+                        return;
                     }
                 }
-                let error = format!("unknown flag: '{l_arg}'");
-                println!("Error: {error}\n{}\n\n{error}", self.help());
-                return;
             } else if let Some(s_arg) = arg.strip_prefix("-") {
                 'mid: for chr in s_arg.chars() {
                     match chr {
@@ -90,7 +97,6 @@ impl Command {
                         c => {
                             for flag in &self.flags {
                                 if flag.short == c {
-                                    //
                                     if flag.breakpoint {
                                         if opr.is_some() {
                                             panic!("Multiple breakpoint arguments supplied!");
@@ -99,7 +105,6 @@ impl Command {
                                     } else {
                                         (flag.func)(&mut self.states)
                                     }
-                                    //
                                     continue 'mid;
                                 }
                             }
@@ -153,9 +158,6 @@ impl Flag {
     pub fn run(&self, states: &mut StateBox) {
         (self.func)(states)
     }
-    // pub fn breakpoint(&self) -> bool {
-    //     self.breakpoint
-    // }
 }
 
 pub struct StateBox {
