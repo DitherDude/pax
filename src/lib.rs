@@ -1,10 +1,13 @@
+use std::{any::Any, collections::HashMap};
+
 pub struct Command {
     pub name: String,
     pub about: String,
     pub version: String,
     pub flags: Vec<Flag>,
     pub subcommands: Vec<Command>,
-    pub func: Box<dyn Commandable>,
+    pub states: StateBox,
+    pub func: fn(cmd: &mut Command, args: &[String]),
     pub man: String,
 }
 
@@ -17,6 +20,7 @@ impl PartialEq for Command {
             version: _,
             flags: _,
             subcommands: _,
+            states: _,
             func: _,
             man: _,
         }: &Self,
@@ -29,24 +33,16 @@ impl Command {
     pub fn help(&self) -> String {
         let mut help = String::new();
         help.push_str(&format!("{}\n", self.version));
-        let mut has_attrs = false;
-        let mut attrs = String::new();
-        let mut flags = String::new();
         let mut commands = String::new();
-        if self.flags != Vec::new() {
-            has_attrs = true;
-            attrs = String::from(&format!("Usage:\n  {} [flags]\n", self.name));
-            flags = String::from("\nFlags:\n");
-            for flag in &self.flags {
-                flags.push_str(&format!("  {}\n", flag.help()));
-            }
+        let mut attrs = String::from(&format!("Usage:\n  {} [flags]\n", self.name));
+        let mut flags = String::from("\nFlags:\n");
+        for flag in &self.flags {
+            flags.push_str(&format!("  {}\n", flag.help()));
         }
+        flags.push_str(&format!("  -h, --help\thelp for {}\n", self.name));
+        // }
         if self.subcommands != Vec::new() {
-            if has_attrs {
-                attrs.push_str(&format!("  {} [command]\n", self.name));
-            } else {
-                attrs = String::from(&format!("Usage:\n  {} [command]\n", self.name))
-            }
+            attrs.push_str(&format!("  {} [command]\n", self.name));
             commands = String::from("\nAvailable Commands:\n");
             for command in &self.subcommands {
                 commands.push_str(&format!("  {}\n", command.micro_help()));
@@ -64,7 +60,7 @@ impl Command {
         help.push_str(&format!("{}\t{}", self.name, self.about));
         help
     }
-    pub fn run(&self, args: &[String]) {
+    pub fn run(&mut self, args: &[String]) {
         let mut opr = None;
         for arg in args {
             if let Some(l_arg) = arg.strip_prefix("--") {
@@ -76,34 +72,32 @@ impl Command {
                 }
             } else if let Some(mut s_arg) = arg.strip_prefix("-") {
                 'mid: for chr in s_arg.chars() {
-                    for flag in &self.flags {
-                        if flag.short == chr {
-                            opr = Some(flag);
-                            s_arg = &s_arg[1..];
-                            continue 'mid;
+                    match chr {
+                        'h' => {
+                            println!("{}", self.help());
+                            return;
+                        }
+                        c => {
+                            for flag in &self.flags {
+                                if flag.short == c {
+                                    opr = Some(flag);
+                                    s_arg = &s_arg[1..];
+                                    continue 'mid;
+                                }
+                            }
+                            let error = format!("unknown shorthand flag: '{c}' in -{s_arg}");
+                            println!("Error: {error}\n{}\n\n{error}", self.help());
+                            return;
                         }
                     }
-                    let error = format!("unknown shorthand flag: '{chr}' in -{s_arg}");
-                    println!("Error: {error}\n{}\n\n{error}", self.help());
-                    return;
                 }
             }
         }
         if let Some(flag) = opr {
-            flag.run(self);
+            (flag.func)(self)
         } else {
-            self.func.run(self, args);
+            (self.func)(self, args)
         }
-    }
-}
-
-pub trait Commandable {
-    fn run(&self, cmd: &Command, args: &[String]);
-}
-
-impl<T: Fn(&Command, &[String])> Commandable for T {
-    fn run(&self, cmd: &Command, args: &[String]) {
-        self(cmd, args);
     }
 }
 
@@ -111,7 +105,8 @@ pub struct Flag {
     pub short: char,
     pub long: String,
     pub about: String,
-    pub func: Box<dyn Flaggable>,
+    pub consumer: bool,
+    pub func: fn(parent: &mut Command),
 }
 
 impl PartialEq for Flag {
@@ -121,6 +116,7 @@ impl PartialEq for Flag {
             short: _,
             long: _,
             about: _,
+            consumer: _,
             func: _,
         }: &Self,
     ) -> bool {
@@ -128,26 +124,88 @@ impl PartialEq for Flag {
     }
 }
 
-pub trait Flaggable {
-    fn run(&self, parent: &Command);
-}
-
-impl<T: Fn(&Command)> Flaggable for T {
-    fn run(&self, parent: &Command) {
-        self(parent);
-    }
-}
-
 impl Flag {
     pub fn help(&self) -> String {
         let mut help = String::new();
-        help.push_str(&format!(
-            "-{}, --{}   {}",
-            self.short, self.long, self.about
-        ));
+        help.push_str(&format!("-{}, --{}\t{}", self.short, self.long, self.about));
         help
     }
-    pub fn run(&self, parent: &Command) {
-        self.func.run(parent);
+    pub fn run(&self, parent: &mut Command) {
+        (self.func)(parent)
+    }
+}
+
+pub struct StateBox {
+    store: HashMap<&'static str, Box<dyn Any>>,
+}
+
+impl StateBox {
+    pub fn new() -> Self {
+        StateBox {
+            store: HashMap::new(),
+        }
+    }
+    pub fn insert<T: 'static>(&mut self, key: &'static str, value: T) -> Result<(), String> {
+        if self.store.contains_key(key) {
+            return Err(String::from(
+                "Key already exists! If you wish to update this value, use `set()` method instead.",
+            ));
+        }
+        self.store.insert(key, Box::new(value));
+        Ok(())
+    }
+    pub fn remove(&mut self, key: &str) -> Result<(), String> {
+        match self.store.remove_entry(key) {
+            Some(_) => Ok(()),
+            None => Err(String::from("Cannot remove nonexistant key!")),
+        }
+    }
+    pub fn get<T: 'static>(&self, key: &str) -> Option<&T> {
+        self.store.get(key)?.downcast_ref::<T>()
+    }
+    pub fn set<T: 'static>(&mut self, key: &str, value: T) -> Result<(), String> {
+        if let Some(state) = self.store.get_mut(key) {
+            *state = Box::new(value);
+            Ok(())
+        } else {
+            Err(String::from(
+                "Key not found. If you wish to create this value, use `insert()` method instead.",
+            ))
+        }
+    }
+    pub fn push<T: 'static>(&mut self, _key: &str, _value: T) -> ! {
+        //Learned the '!' (bang) return type from RUst Kernel dev ;P
+        unimplemented!()
+    }
+    pub fn pop<T: 'static>(&mut self, key: &str) -> Option<T> {
+        self.store
+            .remove(key)?
+            .downcast::<T>()
+            .map(|x| Some(*x))
+            .ok()?
+    }
+    pub fn shove<T: 'static>(&mut self, key: &'static str, value: T) {
+        if let Some(state) = self.store.get_mut(key) {
+            *state = Box::new(value)
+        } else {
+            self.store.insert(key, Box::new(value));
+        }
+    }
+    pub fn yank(&mut self, key: &str) {
+        // WARNING: This function has VERY different connotation to the 'yank' from NVIM!
+        self.store.remove(key);
+    }
+    pub fn len(&self) -> usize {
+        self.store.len()
+    }
+    // This is to make Clippy happy
+    pub fn is_empty(&self) -> bool {
+        self.store.is_empty()
+    }
+}
+
+impl Default for StateBox {
+    fn default() -> Self {
+        Self::new()
     }
 }
