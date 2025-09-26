@@ -1,5 +1,5 @@
 # Hello!
-I'm just gonna add this readme rq b4 i push to github. I will likely work on this when I'm offline (read: on the train etc.) SO if commits may be pushed online a couple hours after made. The structs etc. shld be done in the root `lib.rs`, and implementaitons should be done in the main `main.rs` and nested `lib.rs`s.
+I'm just gonna add this readme rq b4 i push to github. I will likely work on this when I'm offline (read: on the train etc.) SO if commits may be pushed online a couple hours after made. The structs etc. shld be done in the root `lib.rs`, and implementaitons should be done in the main `main.rs` and nested `mod.rs`s.
 > [!WARNING]
 > The most up-to-date version of this repo (at least what I'm adding) will be on my local NAS - github will receive the _commit_ updates, but the NAS will receive the _On Save_ updates. As such, please 🙏 make a PR if you wish to introduce breaking changes.
 
@@ -13,12 +13,12 @@ uhh each command in their own folder, e.g. say there are commands `cmd1` and `cm
 .
 ├── src
 │   ├── cmd1
-│   │   └── lib.rs # <-- or possibly main.rs? whichever is gramatically correct in the rust world...
+│   │   └── mod.rs
 │   ├── cmd2
 │   │   ├── nested1
-│   │   │   └── lib.rs
+│   │   │   └── mod.rs
 │   │   ├── nested2
-│   │   │   └── lib.rs
+│   │   │   └── mod.rs
 │   │   └── lib.rs
 │   ├── lib.rs
 │   └── main.rs

@@ -1,35 +1,34 @@
 use std::env;
 
-use paxr::{Command, Flag, StateBox};
+use paxr::{Command, Flag, StateBox, install};
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
     let sample_flag = Flag {
         short: 's',
         long: String::from("sample"),
-        about: String::from("Does nothing"),
+        about: String::from("does nothing"),
         consumer: false,
         breakpoint: false,
         run_func: sample_work,
     };
     let consumable_flag = Flag {
         short: 'c',
-        long: String::from("consumable"),
-        about: String::from("Consumes the next arg"),
+        long: String::from("consume"),
+        about: String::from("consumes the next arg"),
         consumer: true,
         breakpoint: false,
         run_func: consumable_work,
     };
-    let mut command = Command {
-        name: String::from("pax"),
-        about: String::new(),
-        version: String::from("PAX is the official package manager for the Oreon 11."),
-        flags: vec![sample_flag, consumable_flag],
-        subcommands: Vec::new(),
-        states: StateBox::new(),
-        run_func: main_work,
-        man: String::from("There is no manual. 'Go' sucks."),
-    };
+    let command = Command::new(
+        "pax",
+        Vec::new(),
+        "PAX is the official package manager for the Oreon 11.",
+        vec![sample_flag, consumable_flag],
+        vec![install::install()],
+        main_work,
+        "There is no manual. 'Go' sucks.",
+    );
     command.run(args.iter());
 }
 

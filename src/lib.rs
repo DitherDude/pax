@@ -1,9 +1,11 @@
 use std::{any::Any, collections::HashMap, slice::Iter};
 
+pub mod install;
+
 pub struct Command {
     pub name: String,
+    pub aliases: Vec<String>,
     pub about: String,
-    pub version: String,
     pub flags: Vec<Flag>,
     pub subcommands: Vec<Command>,
     pub states: StateBox,
@@ -16,8 +18,8 @@ impl PartialEq for Command {
         &self,
         Command {
             name: _,
+            aliases: _,
             about: _,
-            version: _,
             flags: _,
             subcommands: _,
             states: _,
@@ -30,10 +32,31 @@ impl PartialEq for Command {
 }
 
 impl Command {
+    pub fn new(
+        name: &str,
+        aliases: Vec<String>,
+        about: &str,
+        flags: Vec<Flag>,
+        subcommands: Vec<Command>,
+        run_func: fn(states: &StateBox),
+        man: &str,
+    ) -> Self {
+        Command {
+            name: name.to_string(),
+            aliases,
+            about: about.to_string(),
+            flags,
+            subcommands,
+            states: StateBox::new(),
+            run_func,
+            man: man.to_string(),
+        }
+    }
     pub fn help(&self) -> String {
         let mut help = String::new();
-        help.push_str(&format!("{}\n", self.version));
+        help.push_str(&format!("{}\n", self.about));
         let mut commands = String::new();
+        let mut aliases = String::new();
         let mut attrs = String::from(&format!("Usage:\n  {} [flags]\n", self.name));
         let mut flags = String::from("\nFlags:\n");
         for flag in &self.flags {
@@ -44,33 +67,36 @@ impl Command {
             attrs.push_str(&format!("  {} [command]\n", self.name));
             commands = String::from("\nAvailable Commands:\n");
             for command in &self.subcommands {
-                commands.push_str(&format!("  {}\n", command.micro_help()));
+                commands.push_str(&format!("  {}\t{}\n", command.name, command.man));
             }
         }
-        help.push_str(&format!("{attrs}{commands}{flags}\n"));
+        if self.aliases != Vec::<String>::new() {
+            aliases = format!("\nAliases:\n  {}, ", self.name);
+            for alias in &self.aliases {
+                aliases.push_str(&format!("{}, ", alias));
+            }
+            aliases = format!("{}\n", aliases.trim_end_matches(", "));
+        }
+        help.push_str(&format!("{attrs}{commands}{aliases}{flags}\n"));
         help.push_str(&format!(
             "Use {} [command] --help for more information about a command.",
             self.name
         ));
         help
     }
-    fn micro_help(&self) -> String {
-        let mut help = String::new();
-        help.push_str(&format!("{}\t{}", self.name, self.about));
-        help
-    }
-    pub fn run(&mut self, mut args: Iter<'_, String>) {
+    pub fn run(self, mut args: Iter<'_, String>) {
+        let mut m_self = self;
         let mut first_arg = true;
         let mut opr = None;
         'outer: while let Some(arg) = args.nth(0) {
             if let Some(l_arg) = arg.strip_prefix("--") {
                 match l_arg {
                     "help" => {
-                        println!("{}", self.help());
+                        println!("{}", m_self.help());
                         return;
                     }
                     _ => {
-                        for flag in &self.flags {
+                        for flag in &m_self.flags {
                             if flag.long == l_arg {
                                 let val = if flag.consumer { args.nth(0) } else { None };
                                 if flag.breakpoint {
@@ -79,13 +105,13 @@ impl Command {
                                     }
                                     opr = Some((flag, val));
                                 } else {
-                                    (flag.run_func)(&mut self.states, val)
+                                    (flag.run_func)(&mut m_self.states, val)
                                 }
                                 continue 'outer;
                             }
                         }
                         let error = format!("unknown flag: '{l_arg}'");
-                        println!("Error: {error}\n{}\n\n{error}", self.help());
+                        println!("Error: {error}\n{}\n\n{error}", m_self.help());
                         return;
                     }
                 }
@@ -93,11 +119,11 @@ impl Command {
                 'mid: for chr in s_arg.chars() {
                     match chr {
                         'h' => {
-                            println!("{}", self.help());
+                            println!("{}", m_self.help());
                             return;
                         }
                         c => {
-                            for flag in &self.flags {
+                            for flag in &m_self.flags {
                                 if flag.short == c {
                                     let val = if flag.consumer { args.nth(0) } else { None };
                                     if flag.breakpoint {
@@ -106,37 +132,44 @@ impl Command {
                                         }
                                         opr = Some((flag, val));
                                     } else {
-                                        (flag.run_func)(&mut self.states, val)
+                                        (flag.run_func)(&mut m_self.states, val)
                                     }
                                     continue 'mid;
                                 }
                             }
                             let error = format!("unknown shorthand flag: '{c}' in -{s_arg}");
-                            println!("Error: {error}\n{}\n\n{error}", self.help());
+                            println!("Error: {error}\n{}\n\n{error}", m_self.help());
                             return;
                         }
                     }
                 }
             } else if first_arg {
-                for command in &mut self.subcommands {
+                for command in m_self.subcommands {
                     if command.name == *arg {
                         command.run(args);
                         return;
+                    } else {
+                        for alias in &command.aliases {
+                            if *alias == *arg {
+                                command.run(args);
+                                return;
+                            }
+                        }
                     }
                 }
-                let error = format!("unknown comand \"{arg}\" for \"{}\"", self.name);
+                let error = format!("unknown comand \"{arg}\" for \"{}\"", m_self.name);
                 println!(
                     "Error: {error}\nRun {} --help for usage.\n{error}",
-                    self.name
+                    m_self.name
                 );
                 return;
             }
             first_arg = false;
         }
         if let Some((opr, val)) = opr {
-            (opr.run_func)(&mut self.states, val)
+            (opr.run_func)(&mut m_self.states, val)
         } else {
-            (self.run_func)(&self.states)
+            (m_self.run_func)(&m_self.states)
         }
     }
 }
